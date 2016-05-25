@@ -36,38 +36,45 @@ LP_DIR=`cd $(dirname $0); cd ..; pwd`
 BUILDPACK_DIR="$(dirname $(dirname $0))"
 GCC_VERSION=4.8
 
-# fix STACK variable if unset
-if [ -z "${STACK}" ];
-then
-  STACK="cedar-14"
-fi
+# # fix STACK variable if unset
+# if [ -z "${STACK}" ];
+# then
+#   STACK="cedar-14"
+# fi
+STACK="master" # "cedar-14"
 
 # config
 
-# read in R version if file exists
-if [[ -f $BUILD_DIR/.r-version ]]; then
-  R_VERSION=`read_var $BUILD_DIR/.r-version`
-else
-  R_VERSION="3.2.4"
-fi
+# # read in R version if file exists
+# if [[ -f $BUILD_DIR/.r-version ]]; then
+#   R_VERSION=`read_var $BUILD_DIR/.r-version`
+# else
+#   R_VERSION="3.2.1" # "3.2.4"
+# fi
+R_VERSION="3.2.0" #"3.2.1"
 
-# read in buildback binary version if file exists
-if [[ -f $BUILD_DIR/.r-buildpack-version ]]; then
-  BUILD_PACK_VERSION=`read_var $BUILD_DIR/.r-buildpack-version`
-else
-  BUILD_PACK_VERSION="20160322-0811"
-fi
+# # read in buildback binary version if file exists
+# if [[ -f $BUILD_DIR/.r-buildpack-version ]]; then
+#   BUILD_PACK_VERSION=`read_var $BUILD_DIR/.r-buildpack-version`
+# else
+#   BUILD_PACK_VERSION="20151119-2338" # "20160322-0811"
+# fi
+BUILD_PACK_VERSION="20150719-0018" #"20151119-2338"
 
 S3_BUCKET="heroku-buildpack-r"
-R_BINARIES="http://${S3_BUCKET}.s3.amazonaws.com/${STACK}/R-${R_VERSION}-binaries-${BUILD_PACK_VERSION}.tar.gz"
+# R_BINARIES="http://${S3_BUCKET}.s3.amazonaws.com/${STACK}/R-${R_VERSION}-binaries-${BUILD_PACK_VERSION}.tar.gz"
+# R_BINARIES="https://heroku-buildpack-r.s3.amazonaws.com/cedar-14/R-3.2.1-binaries-20151119-2338.tar.gz"
+R_BINARIES="http://heroku-buildpack-r.s3.amazonaws.com/cedar-14/R-3.2.0-binaries-20150719-0018.tar.gz"
+
 
 VENDOR_DIR="$BUILD_DIR/vendor"
 CRAN_MIRROR="http://cran.revolutionanalytics.com"
 
 mkdir -p $CACHE_DIR
 
-# vendor R into the slug
-echo "Vendoring R $R_VERSION for $STACK stack ($BUILD_PACK_VERSION)" | indent
+# # vendor R into the slug
+# echo "Vendoring R $R_VERSION for $STACK stack ($BUILD_PACK_VERSION)" | indent
+echo "Vendoring R $R_VERSION ($BUILD_PACK_VERSION)" | indent
 
 # download and unpack binaries
 echo "Downloading and unpacking R binaries ($R_BINARIES)" | indent
