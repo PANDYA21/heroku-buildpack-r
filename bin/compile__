@@ -8,7 +8,7 @@ set -e
 
 # shopt -s extglob
 
-echo "Bhaumik's script..."
+echo "Bhaumik's script....."
 
 function error() {
   echo " !     $*" >&2
