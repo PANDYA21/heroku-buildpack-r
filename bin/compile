@@ -1,5 +1,7 @@
+#!/usr/bin/env bash
+
 # fail fast
-# set -e
+set -e
 
 # # debug
 # set -x
