@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+echo "Compiling Buildpack for R from Bhaumik's git repo..."
 
 # fail fast
 set -e
 
-# # debug
+# debug
 # set -x
 
-# shopt -s extglob
-
-echo "Bhaumik's script..."
+shopt -s extglob
 
 function error() {
   echo " !     $*" >&2
@@ -23,185 +24,157 @@ function indent() {
   esac
 }
 
-function read_var() {
-  echo $(head -n 1 $1)
+function build() {
+  echo ----------------------------------------------------------------------
+  echo Building $@...
+  echo ----------------------------------------------------------------------
+  echo
+  pushd $1
+    ./configure --prefix=$VENDOR_DIR/$2 ${@:3} > /dev/null 2>&1
+    echo "configure finished"
+    make
+    echo "make finished"
+    make install > /dev/null 2>&1
+    echo "install finished"
+    make clean > /dev/null 2>&1
+    echo "clean finished"
+  popd > /dev/null
+  echo
+  echo
+
+  # add to libraries and pkg-config
+  export LD_LIBRARY_PATH="$VENDOR_DIR/$2/lib:$LD_LIBRARY_PATH"
+  export PKG_CONFIG_PATH="$VENDOR_DIR/$2/lib/pkgconfig:$PKG_CONFIG_PATH"
+
 }
 
-# # clean up leaking environment
-# unset GIT_DIR
+function download() {
+  if [ ! -f "$2" ]; then
+    echo Downloading $2...
+    curl $1 -o $2 -s -S
+  else
+    echo Got $2...
+  fi
+}
+
+# clean up leaking environment
+unset GIT_DIR
 
 # parse and derive params
-BUILDPACK_DIR="$(dirname $(dirname $0))"
 BUILD_DIR=$1
-CACHE_DIR=$2
-
-# ensure exist
-mkdir -p $BUILD_DIR
-mkdir -p $CACHE_DIR
-
-# fix STACK variable if unset
-if [ -z "${STACK}" ];
-then
-  STACK="cedar-14"
-fi
+CACHE_DIR="$2/vendor"
+LP_DIR=`cd $(dirname $0); cd ..; pwd`
+BUILDPACK_DIR="$(dirname $(dirname $0))"
 
 # config
-VENDOR_DIR="$BUILD_DIR/vendor"
-GCC_VERSION=4.8
+BUILD_PACK_VERSION="20130729"
 
-# read in R version if file exists
-if [[ -f "$BUILD_DIR/.r-version" ]];
-then
-  R_VERSION=`read_var $BUILD_DIR/.r-version`
-else
-  R_VERSION="3.2.0"
-fi
-
-# read in buildback binary version if file exists
-if [[ -f "$BUILD_DIR/.r-buildpack-version" ]];
-then
-  BUILD_PACK_VERSION=`read_var $BUILD_DIR/.r-buildpack-version`
-else
-  BUILD_PACK_VERSION="20150719-0018"
-fi
+GCC_VERSION="4.3"
+GLIBC_VERSION="2.7"
+#R_VERSION="2.15.1"
+R_VERSION="3.1.0"
 
 S3_BUCKET="heroku-buildpack-r"
-R_BINARIES="http://${S3_BUCKET}.s3.amazonaws.com/${STACK}/R-${R_VERSION}-binaries-${BUILD_PACK_VERSION}.tar.gz"
+#R_BINARIES="http://${S3_BUCKET}.s3.amazonaws.com/R-${R_VERSION}-binaries-${BUILD_PACK_VERSION}.tar.gz"
+# R_BINARIES="https://s3.amazonaws.com/r-buildpack/R-3.1.0-binaries-20140629-2201.tar.gz"
+R_BINARIES="https://cloud.r-project.org/src/base/R-3/R-3.2.0.tar.gz"
+
+VENDOR_DIR="$BUILD_DIR/vendor"
+R_HOME="$VENDOR_DIR/R"
 CRAN_MIRROR="http://cran.revolutionanalytics.com"
 
+mkdir -p $CACHE_DIR
+
 # vendor R into the slug
-echo "Vendoring R $R_VERSION for $STACK stack ($BUILD_PACK_VERSION)" | indent
+echo "Vendoring R $R_VERSION" | indent
 
-# # Check if we can pull from cache rather than downloading
-# if [[ -f "$CACHE_DIR/.r-version" ]] &&
-#    [[ "$(read_var $CACHE_DIR/.r-version)" = "$R_VERSION" ]] &&
-#    [[ -f "$CACHE_DIR/.r-buildpack-version" ]] &&
-#    [[ "$(read_var $CACHE_DIR/.r-buildpack-version)" = "$BUILD_PACK_VERSION" ]];
-# then
+# download and unpack binaries
+echo "Downloading and unpacking R binaries" | indent
+mkdir -p $VENDOR_DIR && mkdir -p /app/vendor
+curl $R_BINARIES -s -o r_binaries.tar.gz
+tar xzf r_binaries.tar.gz -C $VENDOR_DIR
+rm r_binaries.tar.gz
 
-#   # copy from cache to the build directory
-#   echo "Retrieving R binaries and packages from cache" | indent
-#   cp -r $CACHE_DIR/vendor $BUILD_DIR
+echo "Directory created, R pulled, unpacked" | indent
 
-# else
+# need to copy the binaries to /app/vendor so that R works
+cp -R $VENDOR_DIR/gcc-$GCC_VERSION /app/vendor/gcc-$GCC_VERSION
+cp -R $VENDOR_DIR/glibc-$GLIBC_VERSION /app/vendor/glibc-$GLIBC_VERSION
+#cp -R $VENDOR_DIR/readline /app/vendor/readline
+cp -R $VENDOR_DIR/R /app/vendor/R
 
-  # download and unpack binaries
-  echo "Downloading and unpacking R binaries ($R_BINARIES)" | indent
-  curl $R_BINARIES -s -o - | tar xzf - -C $BUILD_DIR
+echo "Stuff copied" | indent
 
-# fi
 
-#
-# expected initial layout of $BUILD_DIR
-#
-#  $BUILD_DIR
-#   |- vendor    # <= $VENDOR_DIR
-#      |- .apt   # <= this is here, to prevent clashes, but will be moved
-#      |- R
-#
+# R needs to know where gfortran and glibc header files are
+export PATH=/app/vendor/R/bin:/app/vendor/gcc-$GCC_VERSION/bin:$PATH
+export LDFLAGS="-L/app/vendor/gcc-$GCC_VERSION/lib64/"
+export CPPFLAGS="-I/app/vendor/glibc-$GLIBC_VERSION/string/ -I/app/vendor/glibc-$GLIBC_VERSION/time -I/usr/include/x86_64-linux-gnu/sys -I/usr/include/x86_64-linux-gnu/gnu"
+export R_HOME=/app/vendor/R
+export R_INCLUDE=$R_HOME/lib64/R/include
+export LD_LIBRARY_PATH="/lib:/usr/lib:/usr/lib/x86_64-linux-gnu:$R_HOME/lib64:$LD_LIBRARY_PATH"
+export LIBRARY_PATH="/lib:/usr/lib:/usr/lib/x86_64-linux-gnu:$R_HOME/lib64:$LD_LIBRARY_PATH"
 
-# this buildpack may be used together with heroku-buildpack-apt
-# in which case, there may be additional dependancies which need
-# to be copied to /app/.apt, so that R can find them
-if [ -d $BUILD_DIR/.apt ]; then
+#ln -s /usr/lib/libreadline.so $R_HOME/lib64/libreadline.so.5 2>&1
+ln -s /usr/lib/x86_64-linux-gnu/libreadline.so $R_HOME/lib64/libreadline.so.5 2>&1
+ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.4.1.2 $R_HOME/lib64/libmpfr.so.1 2>&1
+ln -s /usr/lib/x86_64-linux-gnu/libgmp.so.10.1.3 $R_HOME/lib64/libgmp.so.3 2>&1
+ln -s /usr/lib/x86_64-linux-gnu/crti.o $R_HOME/lib64/crti.o 2>&1
 
-  # move the app authors binaries
-  echo "Copying existing .apt files" | indent
-  cp -r $BUILD_DIR/.apt /app
+#mkdir $R_INCLUDE/sys
+#mkdir $R_INCLUDE/gnu
+#mkdir $R_INCLUDE/bits
+#mkdir $R_INCLUDE/asm
 
-  # the buildpack binaries will be merged with these
-  # so there may be issues if different versions
-  # are included over those from the R buildpack
+#cp -R /usr/include/x86_64-linux-gnu/sys/* $R_INCLUDE/sys
+#cp -R /usr/include/x86_64-linux-gnu/gnu/* $R_INCLUDE/gnu
+#cp -R /usr/include/x86_64-linux-gnu/bits/* $R_INCLUDE/bits
+#cp -R /usr/include/x86_64-linux-gnu/asm/* $R_INCLUDE/asm
+cp -Rv /usr/include/x86_64-linux-gnu/* $R_INCLUDE
+cp -Rv /usr/include/* $R_INCLUDE
 
-  echo "Merging buildpack .apt files" | indent
-  cp -r $VENDOR_DIR/.apt/* /app/.apt
+export CPATH=/usr/lib/x86_64-linux-gnu:$R_INCLUDE
 
-  rm -rf $BUILD_DIR/.apt
-  rm -rf $VENDOR_DIR/.apt
 
-else
+echo "variables set" | indent
 
-  # move the binary dependances to /app/.apt
-  # so that R can find them when compiling packages
-  mv $VENDOR_DIR/.apt /app
+# copy over environment
+mkdir -p $BUILD_DIR/.profile.d
+cp "$BUILDPACK_DIR/bin/r_environment.sh" $BUILD_DIR/.profile.d/r_environment.sh
 
-fi
+echo "environment copied" | indent
 
-# move the R binaries to /app/vendor/R
-mv $VENDOR_DIR/R /app/vendor
-
-# trialed and errored on this; copy over libs to gfortran, so
-# that liblto_plugin.so and others can be found
-# (tried using LDFLAGS, LD_LIBRARY_PATH and LIBRARY_PATH but didn't work)
-cp -r /usr/lib/gcc/x86_64-linux-gnu/$GCC_VERSION/* /app/.apt/usr/lib/gcc/x86_64-linux-gnu/$GCC_VERSION
-
-# prevent warnings when building packages
-# since these directories/files aren't included
-# in the buildpack to make it smaller
+# prevent warnings
 mkdir -p /app/vendor/R/lib64/R/doc/html
 touch /app/vendor/R/lib64/R/doc/html/R.css
-
-#
-# expected layout
-#
-#  /app
-#    /.apt
-#    /vendor
-#      /R
-#
-# NOTE: there are a whole bunch more directories
-# and files here, provided by Heroku, which we
-# aren't interested in, so ignoring them
-#
-
-# set environment variables, needed for compiling packages
-source "$BUILDPACK_DIR/bin/r_environment.sh"
 
 # install dependencies from CRAN
 echo "Executing init.r script" | indent
 
 # set the CRAN mirror and run the init.r program
-# NOTE: output can't be indented unfortunately
-/app/vendor/R/bin/R --no-save -s <<RPROG
-  cat("\n=====> init.r Starting...\n")
+R -s <<RPROG
   Sys.setenv(BUILD_DIR="$BUILD_DIR")
-  setwd("/app")
+  setwd("$BUILD_DIR")
   r <- getOption("repos");
+  print(r)
   r["CRAN"] <- "$CRAN_MIRROR";
   options(repos=r);
   `cat $BUILD_DIR/init.r`
-  cat("\n=====> init.r Completed Successfully\n")
 RPROG
 
-# TODO: determine whether the R script failed
-echo
+#cat indent
+
 echo "R $R_VERSION successfully installed" | indent
 
-#
-# need to copy binaries back to the build directory so that any
-# installed packages and other dependances get included in the slug
+# need to copy binaries back so that any installed packages are included in the slug
+rm -rf $VENDOR_DIR && mkdir -p $VENDOR_DIR
+cp -R /app/vendor/gcc-$GCC_VERSION $VENDOR_DIR/gcc-$GCC_VERSION
+cp -R /app/vendor/glibc-$GLIBC_VERSION $VENDOR_DIR/glibc-$GLIBC_VERSION
+cp -R /app/vendor/R $VENDOR_DIR/R
 
-# copy over environment
-mkdir -p "$BUILD_DIR/.profile.d"
-cp "$BUILDPACK_DIR/bin/r_environment.sh" "$BUILD_DIR/.profile.d/r_environment.sh"
+# HACK
+cp $VENDOR_DIR/gcc-$GCC_VERSION/lib64/* $VENDOR_DIR/R/lib64/R/lib
 
-# now copy everything back to the BUILD_DIR
-# which will be used to make the slug
-cp -r /app/.apt $BUILD_DIR
-cp -r /app/vendor/R $VENDOR_DIR
-
-#
-# layout of $BUILD_DIR now
-#
-#  $BUILD_DIR
-#   |- .apt
-#   |- vendor    # <= $VENDOR_DIR
-#      |- R
-#
-
-# copy to the cache directory
-echo "$R_VERSION" > "$CACHE_DIR/.r-version"
-echo "$BUILD_PACK_VERSION" > "$CACHE_DIR/.r-buildpack-version"
-mkdir -p $CACHE_DIR/vendor
-cp -r /app/.apt $CACHE_DIR/vendor
-cp -r /app/vendor/R $CACHE_DIR/vendor
+# remove unneeded files to make slug smaller
+pushd $VENDOR_DIR/gcc-$GCC_VERSION > /dev/null && rm -rf !(lib64) && popd > /dev/null
+pushd $VENDOR_DIR/glibc-$GLIBC_VERSION > /dev/null && rm -rf !(string|time) && popd > /dev/null
