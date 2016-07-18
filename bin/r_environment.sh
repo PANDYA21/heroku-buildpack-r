@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# bin/release <build-dir>
 
 GCC_VERSION=4.8
 
