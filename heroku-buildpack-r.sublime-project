@@ -1,0 +1,32 @@
+{
+	"build_systems":
+	[
+		{
+		}
+	],
+	"folders":
+	[
+		{
+			"folder_exclude_patterns":
+			[
+				".Rproj.user"
+			],
+			"file_exclude_patterns": 
+			[
+				".Rhistory",
+				// ".cfignore",
+				// ".gitignore",
+				// ".r-version",
+				// ".r-buildpack-version",
+				".jsbeautifyrc"
+			],
+			"path": "."
+		}
+	],
+	"settings":
+	{
+		"tab_size": 4,
+		"indent_to_bracket": false,
+		"preserve_newlines": true, // Whether existing line breaks should be preserved
+	}
+}
